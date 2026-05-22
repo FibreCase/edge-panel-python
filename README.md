@@ -1,4 +1,4 @@
-# Python Backend
+# Edge Panel Python Backend
 
 这是 `flutter_desktop_panel` 的后端服务，基于 FastAPI + Socket.IO 构建，负责为 Flutter 前端提供天气、事件和消息数据，并处理图片上传与消息持久化。
 
