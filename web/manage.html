@@ -502,10 +502,13 @@
                 const checkbox = document.querySelector(`input[data-id="${msg.id}"]`);
                 if (checkbox) {
                     checkbox.addEventListener('change', () => {
+                        const item = checkbox.closest('.message-item');
                         if (checkbox.checked) {
                             selectedIds.add(msg.id);
+                            item && item.classList.add('selected');
                         } else {
                             selectedIds.delete(msg.id);
+                            item && item.classList.remove('selected');
                         }
                         updateSelectionCount();
                     });
