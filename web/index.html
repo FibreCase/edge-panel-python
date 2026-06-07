@@ -458,6 +458,69 @@
             document.getElementById('placeholder-content').classList.add('hidden');
         });
 
+        /**
+         * 客户端图片压缩（仅对 > 1 MB 的图片生效）
+         * 策略：先按最长边缩放到 2048px，再以 0.85 JPEG 质量输出。
+         * 如果原图本身是 PNG/WebP 等无损格式，压缩后改为 image/jpeg。
+         * @param {File} file 原始文件
+         * @returns {Promise<File>} 压缩后的 File（或原 File，若无需压缩）
+         */
+        async function compressImage(file) {
+            const ONE_MB = 1 * 1024 * 1024;
+            if (file.size <= ONE_MB) return file;   // 不超过 1 MB，直接返回
+
+            const MAX_SIDE = 2048;   // 长边上限（px）
+            const QUALITY  = 0.85;   // JPEG 质量
+
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const objectUrl = URL.createObjectURL(file);
+
+                img.onload = () => {
+                    URL.revokeObjectURL(objectUrl);
+
+                    // 计算缩放比例
+                    let { width, height } = img;
+                    if (width > MAX_SIDE || height > MAX_SIDE) {
+                        const ratio = Math.min(MAX_SIDE / width, MAX_SIDE / height);
+                        width  = Math.round(width  * ratio);
+                        height = Math.round(height * ratio);
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width  = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    canvas.toBlob(
+                        (blob) => {
+                            if (!blob) return reject(new Error('图片压缩失败'));
+                            // 保持原始文件名，但扩展名统一为 .jpg
+                            const baseName = file.name.replace(/\.[^.]+$/, '');
+                            const compressed = new File([blob], `${baseName}.jpg`, {
+                                type: 'image/jpeg',
+                                lastModified: Date.now(),
+                            });
+                            console.log(
+                                `[压缩] ${(file.size / 1024).toFixed(1)} KB → ${(compressed.size / 1024).toFixed(1)} KB`
+                            );
+                            resolve(compressed);
+                        },
+                        'image/jpeg',
+                        QUALITY
+                    );
+                };
+
+                img.onerror = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    reject(new Error('图片加载失败，无法压缩'));
+                };
+
+                img.src = objectUrl;
+            });
+        }
+
         async function handleSubmit() {
             const sendBtn = document.getElementById('send-btn');
             const statusMsg = document.getElementById('status-message');
@@ -483,8 +546,19 @@
                 } else {
                     const fileInput = document.getElementById('image-input');
                     if (fileInput.files.length === 0) throw new Error("请先选择图片");
+
+                    // 超过 1 MB 时在浏览器端先压缩，再上传
+                    const originalFile = fileInput.files[0];
+                    const fileToUpload = await compressImage(originalFile);
+                    if (fileToUpload !== originalFile) {
+                        showStatus(
+                            `🗜️ 图片已压缩：${(originalFile.size / 1024).toFixed(0)} KB → ${(fileToUpload.size / 1024).toFixed(0)} KB，上传中…`,
+                            true
+                        );
+                    }
+
                     const formData = new FormData();
-                    formData.append('file', fileInput.files[0]);
+                    formData.append('file', fileToUpload);
 
                     const uploadResponse = await fetch(IMAGE_UPLOAD_API_URL, {
                         method: 'POST',
