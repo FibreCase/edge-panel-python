@@ -563,7 +563,7 @@
         }
 
         async function handleClear() {
-            if (!confirm('确认要清空所有消息并删除本地资源？')) return;
+            if (!confirm('确认要清空当前消息？删除内容会保留在历史记录中，最近 20 条可恢复。')) return;
             try {
                 const resp = await fetch(CLEAR_API_URL, { method: 'POST' });
                 if (!resp.ok) {
@@ -571,7 +571,7 @@
                     return;
                 }
                 const body = await resp.json();
-                showStatus(`已删除 ${body.deleted_count} 条消息`, true);
+                showStatus(`已清空 ${body.deleted_count} 条消息，历史记录已保留`, true);
             } catch (e) {
                 showStatus('请求失败', false);
             }

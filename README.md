@@ -52,9 +52,11 @@ docker compose up -d
 ## 接口说明
 
 - `GET /api/messages`：获取消息列表
+- `GET /api/messages/deleted`：获取最近 20 条历史消息
 - `POST /api/messages`：创建文本、图片或通知消息记录
 - `POST /api/messages/upload-image`：上传图片并生成图片消息
 - `POST /api/messages/webhook/notify`：其他应用通过 webhook 创建通知消息
+- `POST /api/messages/deleted/{message_id}/restore`：恢复历史消息
 
 ```bash
 curl -X POST 'http://127.0.0.1:5000/api/messages/webhook/notify' \
@@ -65,7 +67,7 @@ curl -X POST 'http://127.0.0.1:5000/api/messages/webhook/notify' \
   }'
 ```
 
-- `POST /api/messages/clear`：清空消息和已上传文件
+- `POST /api/messages/clear`：清空当前消息，删除内容会进入历史消息，最多保留最近 20 条
 
 ## Socket.IO 事件
 

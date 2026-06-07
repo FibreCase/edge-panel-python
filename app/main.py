@@ -15,7 +15,7 @@ import pillow_heif
 import socketio
 
 from weather_service import fetch_current_weather, fetch_minutely_precipitation, fetch_air_quality
-from message_service import delete_all_messages, delete_message, init_message_db, insert_message, list_messages
+from message_service import delete_all_messages, delete_message, init_message_db, insert_message, list_deleted_messages, list_messages, restore_deleted_message
 
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 APP_DIR = Path(__file__).resolve().parent
@@ -119,6 +119,11 @@ def get_messages():
     return {"messages": list_messages()}
 
 
+@app.get("/api/messages/deleted")
+def get_deleted_messages():
+	return {"messages": list_deleted_messages()}
+
+
 @app.post("/api/messages/upload-image")
 async def upload_image_message(request: Request, file: UploadFile = File(...)):
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -157,46 +162,26 @@ async def delete_single_message(message_id: int):
     message = delete_message(message_id)
     if not message:
         raise HTTPException(status_code=404, detail="Message not found")
-    
-    # Delete associated image file if applicable
-    if message.get('type') == 'image':
-        content = message.get('content', '')
-        if '/uploads/' in content:
-            filename = content.split('/uploads/')[-1]
-            if filename:
-                file_path = UPLOADS_DIR / filename
-                try:
-                    if file_path.exists():
-                        file_path.unlink()
-                except Exception:
-                    pass
-    
+
     await sio.emit('messages_updated', {'deleted_id': message_id})
     return {'message': message}
 
 
+@app.post('/api/messages/deleted/{message_id}/restore')
+async def restore_single_message(message_id: int):
+	message = restore_deleted_message(message_id)
+	if not message:
+		raise HTTPException(status_code=404, detail="Message not found in history")
+
+	await sio.emit('messages_updated', {'restored_id': message_id})
+	return {'message': message}
+
+
 @app.post('/api/messages/clear')
 async def clear_messages(request: Request):
-    # delete db rows and uploaded files
     removed = delete_all_messages()
-    deleted_files = []
-    for msg in removed:
-        if msg.get('type') == 'image':
-            content = msg.get('content', '')
-            # try to extract filename under /uploads/
-            if '/uploads/' in content:
-                filename = content.split('/uploads/')[-1]
-                if filename:
-                    file_path = UPLOADS_DIR / filename
-                    try:
-                        if file_path.exists():
-                            file_path.unlink()
-                            deleted_files.append(str(file_path))
-                    except Exception:
-                        pass
-
     await sio.emit('messages_updated', {'cleared': True})
-    return {'deleted_files': deleted_files, 'deleted_count': len(removed)}
+    return {'deleted_files': [], 'deleted_count': len(removed)}
 
 
 app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
