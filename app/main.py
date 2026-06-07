@@ -32,9 +32,9 @@ HEIC_CONTENT_TYPES = {
 }
 HEIC_SUFFIXES = {".heic", ".heif"}
 
-LOCATION = os.getenv("LOCATION", "0, 0")
-KID = os.getenv("KID")
-PROJECT_ID = os.getenv("PROJECT_ID")
+LOCATION = os.getenv("QWEATHER_LOCATION", "0,0")
+KID = os.getenv("QWEATHER_KID")
+PROJECT_ID = os.getenv("QWEATHER_PROJECT_ID")
 
 
 @asynccontextmanager

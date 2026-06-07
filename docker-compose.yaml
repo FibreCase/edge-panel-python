@@ -6,9 +6,9 @@ services:
     image: flutter-desk-panel-backend
     restart: unless-stopped
     environment:
-      - LOCATION=${LOCATION}
-      - KID=${KID}
-      - PROJECT_ID=${PROJECT_ID}
+      - QWEATHER_LOCATION=${LOCATION}
+      - QWEATHER_KID=${KID}
+      - QWEATHER_PROJECT_ID=${PROJECT_ID}
     volumes:
       - ./secrets:/app/app/secrets
       - ./cache:/app/app/cache
