@@ -467,6 +467,7 @@
          */
         async function compressImage(file) {
             const ONE_MB = 1 * 1024 * 1024;
+            if (file.type === 'image/gif') return file;
             if (file.size <= ONE_MB) return file;   // 不超过 1 MB，直接返回
 
             const MAX_SIDE = 2048;   // 长边上限（px）
