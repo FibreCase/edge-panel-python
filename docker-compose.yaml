@@ -9,6 +9,7 @@ services:
       - QWEATHER_LOCATION=${LOCATION}
       - QWEATHER_KID=${KID}
       - QWEATHER_PROJECT_ID=${PROJECT_ID}
+      - TZ=Asia/Shanghai
     volumes:
       - ./secrets:/app/app/secrets
       - ./cache:/app/app/cache
