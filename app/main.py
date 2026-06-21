@@ -1,10 +1,14 @@
 
 from contextlib import asynccontextmanager
 from io import BytesIO
+import logging
 import os
+import sys
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,13 +19,22 @@ import pillow_heif
 import socketio
 
 from weather_service import fetch_current_weather, fetch_minutely_precipitation, fetch_air_quality
-from message_service import delete_all_messages, delete_message, init_message_db, insert_message, list_deleted_messages, list_messages, restore_deleted_message
+from message_service import (
+    delete_all_messages,
+    delete_message,
+    init_message_db,
+    insert_message,
+    list_deleted_messages,
+    list_messages,
+    restore_deleted_message,
+)
+
+logger = logging.getLogger(__name__)
 
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 APP_DIR = Path(__file__).resolve().parent
 WEB_DIR = APP_DIR.parent / "web"
 UPLOADS_DIR = APP_DIR / ".cache" / "uploads"
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 LOCAL_BASE_URL = os.getenv("LOCAL_BASE_URL", "http://127.0.0.1:5000").rstrip("/")
 HEIC_CONTENT_TYPES = {
@@ -121,7 +134,7 @@ def get_messages():
 
 @app.get("/api/messages/deleted")
 def get_deleted_messages():
-	return {"messages": list_deleted_messages()}
+    return {"messages": list_deleted_messages()}
 
 
 @app.post("/api/messages/upload-image")
@@ -157,34 +170,32 @@ async def webhook_notify_message(request: MessageNotifyWebhookRequest):
     return {"message": saved}
 
 
-@app.delete('/api/messages/{message_id}')
+@app.delete("/api/messages/{message_id}")
 async def delete_single_message(message_id: int):
     message = delete_message(message_id)
     if not message:
         raise HTTPException(status_code=404, detail="Message not found")
 
-    await sio.emit('messages_updated', {'deleted_id': message_id})
-    return {'message': message}
+    await sio.emit("messages_updated", {"deleted_id": message_id})
+    return {"message": message}
 
 
-@app.post('/api/messages/deleted/{message_id}/restore')
+@app.post("/api/messages/deleted/{message_id}/restore")
 async def restore_single_message(message_id: int):
-	message = restore_deleted_message(message_id)
-	if not message:
-		raise HTTPException(status_code=404, detail="Message not found in history")
+    message = restore_deleted_message(message_id)
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found in history")
 
-	await sio.emit('messages_updated', {'restored_id': message_id})
-	return {'message': message}
+    await sio.emit("messages_updated", {"restored_id": message_id})
+    return {"message": message}
 
 
-@app.post('/api/messages/clear')
-async def clear_messages(request: Request):
+@app.post("/api/messages/clear")
+async def clear_messages():
     removed = delete_all_messages()
-    await sio.emit('messages_updated', {'cleared': True})
-    return {'deleted_files': [], 'deleted_count': len(removed)}
+    await sio.emit("messages_updated", {"cleared": True})
+    return {"deleted_files": [], "deleted_count": len(removed)}
 
-
-app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 
 def build_weather_payload():
     weather_data = fetch_current_weather(location=LOCATION, kid=KID, project_id=PROJECT_ID)
@@ -192,7 +203,7 @@ def build_weather_payload():
 
     precipitation_data = fetch_minutely_precipitation(location=LOCATION, kid=KID, project_id=PROJECT_ID)
     airquality_data = fetch_air_quality(location=LOCATION, kid=KID, project_id=PROJECT_ID)
-    
+
     return {
         "weather": weather_data.get("text", ""),
         "temperature": weather_data.get("temp", ""),
@@ -204,23 +215,22 @@ def build_weather_payload():
 
 
 def build_event_payload():
-    event_data = {
+    return {
         "name": "风力发电场电气设计",
         "time": "18:00",
         "date": "2026-05-05",
-        "location": "主楼B412"
+        "location": "主楼B412",
     }
-    return event_data
 
 
 @sio.event
 async def connect(sid, environ, auth):
-    print(f"Socket.IO client connected: {sid}")
+    logger.info("Socket.IO client connected: %s", sid)
 
 
 @sio.event
 async def disconnect(sid):
-    print(f"Socket.IO client disconnected: {sid}")
+    logger.info("Socket.IO client disconnected: %s", sid)
 
 
 @sio.event
@@ -231,6 +241,9 @@ async def request_weather(sid, data=None):
 @sio.event
 async def request_event(sid, data=None):
     await sio.emit("event_data", build_event_payload(), to=sid)
+
+
+app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 
 
 if __name__ == "__main__":
