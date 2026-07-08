@@ -1,29 +1,30 @@
 # Edge Panel Python Backend
 
-这是 `flutter_desktop_panel` 的后端服务，基于 FastAPI + Socket.IO 构建，负责为 Flutter 前端提供天气、事件和消息数据，并处理图片上传与消息持久化。
+这是 `flutter_desktop_panel` 的后端服务，基于 FastAPI + Socket.IO 构建。它为前端面板提供天气、事件和消息数据，负责图片上传、消息持久化，并托管 `web/` 下的静态页面。
 
-## 主要职责
+## 功能
 
-- 提供天气数据接口，聚合当前天气、分钟级降水和空气质量信息。
-- 提供事件数据接口，供前端面板展示“下一条事件”。
-- 提供消息接口，支持文本消息、图片消息、通知消息和消息清空。
+- 聚合天气数据：当前天气、分钟级降水和空气质量。
+- 提供消息接口：文本消息、图片消息、通知消息、单条删除和清空。
+- 支持图片上传，并在本地保存原始文件或转换后的 JPEG 文件。
 - 通过 Socket.IO 推送 `messages_updated`，让前端在消息变更后立即刷新。
-- 将消息数据保存到 SQLite 数据库，并将上传图片保存到本地缓存目录。
+- 提供静态前端页面：`web/index.html` 和 `web/manage.html`。
 
 ## 目录结构
 
-- `app/main.py`：FastAPI 入口，定义 HTTP 接口和 Socket.IO 事件。
-- `app/message_backend.py`：消息数据库读写逻辑，使用 SQLite 存储。
-- `app/weather_fetch_remote.py`：QWeather 请求与缓存逻辑。
-- `app/secrets/`：QWeather 私钥文件存放目录。
-- `web/`：静态站点目录，由后端挂载到根路径。
+- `app/main.py`：FastAPI 入口，定义 HTTP 接口、Socket.IO 事件和静态资源挂载。
+- `app/message_service.py`：SQLite 消息存储与读写逻辑。
+- `app/weather_service.py`：QWeather 请求与缓存逻辑。
+- `app/event_service.py`：预留事件服务文件，目前为空。
+- `web/index.html`：消息展示与发送页面。
+- `web/manage.html`：消息管理页面。
+- `web/sw.js`：静态资源缓存的 Service Worker。
 
 ## 运行方式
 
 ### 本地运行
 
 ```bash
-cd python
 uv sync
 uv run python app/main.py
 ```
@@ -33,7 +34,6 @@ uv run python app/main.py
 ### Docker
 
 ```bash
-cd python
 docker compose up -d
 ```
 
@@ -41,9 +41,10 @@ docker compose up -d
 
 后端会读取以下环境变量：
 
-- `LOCATION`：天气查询经纬度，默认 `116.31,40.09`
-- `KID`：QWeather key id
-- `PROJECT_ID`：QWeather project id
+- `LOCATION`：天气查询经纬度，默认 `0, 0`
+- `KID`：QWeather key id，对应 `QWEATHER_KID`
+- `PROJECT_ID`：QWeather project id，对应 `QWEATHER_PROJECT_ID`
+- `QWEATHER_PRIVATE_KEY_FILE`：QWeather Ed25519 私钥文件路径，默认 `app/secrets/ed25519-private.pem`
 - `PUBLIC_BASE_URL`：对外可访问地址，用于生成图片 URL
 - `LOCAL_BASE_URL`：本机访问地址，默认 `http://127.0.0.1:5000`
 
@@ -81,7 +82,14 @@ curl -X POST 'http://127.0.0.1:5000/api/messages/webhook/notify' \
 - 图片缓存目录：`app/.cache/uploads/`
 - 天气缓存目录：`app/.cache/`
 
+## 实现说明
+
+- 图片上传支持常见图片格式，也会将 HEIC / HEIF 转换为 JPEG 后保存。
+- 天气数据通过 QWeather API 拉取，并在本地缓存以减少重复请求。
+- 事件数据当前由 `app/main.py` 中的固定 payload 提供，后续可接入独立事件源。
+- `web/` 下的静态页面由后端直接挂载，上传后的图片也通过 `/uploads/` 对外访问。
+
 ## 说明
 
-- 首次运行前，请确保 QWeather 私钥文件已放入 `app/secrets/`，或通过环境变量提供路径。
-- 后端同时提供静态资源挂载，便于前端直接访问上传的图片。
+- 首次运行前，请确保 QWeather 私钥文件可用，或通过 `QWEATHER_PRIVATE_KEY_FILE` 指定路径。
+- 如果你希望前端展示的图片地址使用公网域名，请设置 `PUBLIC_BASE_URL`。
