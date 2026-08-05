@@ -15,7 +15,7 @@
 - `app/main.py`：FastAPI 入口，定义 HTTP 接口、Socket.IO 事件和静态资源挂载。
 - `app/message_service.py`：SQLite 消息存储与读写逻辑。
 - `app/weather_service.py`：QWeather 请求与缓存逻辑。
-- `app/event_service.py`：预留事件服务文件，目前为空。
+- `app/event_service.py`：事件服务，目前返回占位数据，后续可接入独立事件源。
 - `web/index.html`：消息展示与发送页面。
 - `web/manage.html`：消息管理页面。
 - `web/sw.js`：静态资源缓存的 Service Worker。
@@ -39,16 +39,24 @@ docker compose up -d
 
 ## 环境变量
 
-后端会读取以下环境变量：
+### 天气相关
 
-- `LOCATION`：天气查询经纬度，默认 `0, 0`
-- `KID`：QWeather key id，对应 `QWEATHER_KID`
-- `PROJECT_ID`：QWeather project id，对应 `QWEATHER_PROJECT_ID`
-- `QWEATHER_PRIVATE_KEY_FILE`：QWeather Ed25519 私钥文件路径，默认 `app/secrets/ed25519-private.pem`
-- `PUBLIC_BASE_URL`：对外可访问地址，用于生成图片 URL
-- `LOCAL_BASE_URL`：本机访问地址，默认 `http://127.0.0.1:5000`
+| 变量 | 说明 | 是否必填 | 默认值 |
+|------|------|----------|--------|
+| `QWEATHER_LOCATION` | 天气查询经纬度（经度,纬度） | 否 | `116.41,39.92` |
+| `QWEATHER_KID` | QWeather key id | 是（天气功能） | — |
+| `QWEATHER_PROJECT_ID` | QWeather project id | 是（天气功能） | — |
+| `QWEATHER_PRIVATE_KEY_FILE` | QWeather Ed25519 私钥文件路径 | 否 | `app/secrets/ed25519-private.pem` |
 
-如果未设置 `PUBLIC_BASE_URL`，上传图片返回的地址会使用 `LOCAL_BASE_URL`。
+### 图片与服务地址
+
+| 变量 | 说明 | 是否必填 | 默认值 |
+|------|------|----------|------|
+| `PORT` | 服务监听端口 | 否 | `5000` |
+| `PUBLIC_BASE_URL` | 对外可访问地址，用于生成图片 URL | 否 | — |
+| `LOCAL_BASE_URL` | 本机访问地址，`PUBLIC_BASE_URL` 未设置时作为回退 | 否 | `http://127.0.0.1:5000` |
+
+本地运行与 Docker 使用相同的环境变量名。使用 `docker compose` 时，可在项目根目录创建 `.env` 文件（参考 `.env.example`）。
 
 ## 接口说明
 
@@ -86,7 +94,7 @@ curl -X POST 'http://127.0.0.1:5000/api/messages/webhook/notify' \
 
 - 图片上传支持常见图片格式，也会将 HEIC / HEIF 转换为 JPEG 后保存。
 - 天气数据通过 QWeather API 拉取，并在本地缓存以减少重复请求。
-- 事件数据当前由 `app/main.py` 中的固定 payload 提供，后续可接入独立事件源。
+- 事件数据当前由 `app/event_service.py` 提供固定占位 payload，后续可接入独立事件源。
 - `web/` 下的静态页面由后端直接挂载，上传后的图片也通过 `/uploads/` 对外访问。
 
 ## 说明
