@@ -10,7 +10,7 @@ from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -18,7 +18,8 @@ from pydantic import BaseModel, Field
 import pillow_heif
 import socketio
 
-from weather_service import fetch_current_weather, fetch_minutely_precipitation, fetch_air_quality
+from weather_service import get_weather_summary, KID, PROJECT_ID
+from event_service import get_event_summary
 from message_service import (
     delete_all_messages,
     delete_message,
@@ -31,7 +32,7 @@ from message_service import (
 
 logger = logging.getLogger(__name__)
 
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+socket_server = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 APP_DIR = Path(__file__).resolve().parent
 WEB_DIR = APP_DIR.parent / "web"
 UPLOADS_DIR = APP_DIR / ".cache" / "uploads"
@@ -45,15 +46,13 @@ HEIC_CONTENT_TYPES = {
 }
 HEIC_SUFFIXES = {".heic", ".heif"}
 
-LOCATION = os.getenv("QWEATHER_LOCATION", "0,0")
-KID = os.getenv("QWEATHER_KID")
-PROJECT_ID = os.getenv("QWEATHER_PROJECT_ID")
-
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     init_message_db()
+    if not KID or not PROJECT_ID:
+        logger.warning("QWEATHER_KID or QWEATHER_PROJECT_ID not set — weather requests will fail")
     yield
 
 
@@ -65,7 +64,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
-socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
+socket_app = socketio.ASGIApp(socket_server, other_asgi_app=app)
 
 
 class MessageCreateRequest(BaseModel):
@@ -123,7 +122,7 @@ async def create_message(request: MessageCreateRequest):
         sub_content=request.sub_content,
         source_name=request.source_name,
     )
-    await sio.emit("messages_updated", {"message": saved})
+    await socket_server.emit("messages_updated", {"message": saved})
     return {"message": saved}
 
 
@@ -138,7 +137,7 @@ def get_deleted_messages():
 
 
 @app.post("/api/messages/upload-image")
-async def upload_image_message(request: Request, file: UploadFile = File(...)):
+async def upload_image_message(file: UploadFile = File(...)):
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Only image files are allowed")
 
@@ -154,7 +153,7 @@ async def upload_image_message(request: Request, file: UploadFile = File(...)):
     base_url = PUBLIC_BASE_URL or LOCAL_BASE_URL
     image_url = f"{base_url}/uploads/{filename}"
     saved = insert_message(message_type="image", content=image_url)
-    await sio.emit("messages_updated", {"message": saved})
+    await socket_server.emit("messages_updated", {"message": saved})
 
     return {"url": image_url, "message": saved}
 
@@ -166,7 +165,7 @@ async def webhook_notify_message(request: MessageNotifyWebhookRequest):
         content=request.body,
         source_name=request.app_name,
     )
-    await sio.emit("messages_updated", {"message": saved})
+    await socket_server.emit("messages_updated", {"message": saved})
     return {"message": saved}
 
 
@@ -176,7 +175,7 @@ async def delete_single_message(message_id: int):
     if not message:
         raise HTTPException(status_code=404, detail="Message not found")
 
-    await sio.emit("messages_updated", {"deleted_id": message_id})
+    await socket_server.emit("messages_updated", {"deleted_id": message_id})
     return {"message": message}
 
 
@@ -186,61 +185,43 @@ async def restore_single_message(message_id: int):
     if not message:
         raise HTTPException(status_code=404, detail="Message not found in history")
 
-    await sio.emit("messages_updated", {"restored_id": message_id})
+    await socket_server.emit("messages_updated", {"restored_id": message_id})
     return {"message": message}
 
 
 @app.post("/api/messages/clear")
 async def clear_messages():
     removed = delete_all_messages()
-    await sio.emit("messages_updated", {"cleared": True})
-    return {"deleted_files": [], "deleted_count": len(removed)}
+    await socket_server.emit("messages_updated", {"cleared": True})
+    return {"deleted_count": len(removed)}
 
 
-def build_weather_payload():
-    weather_data = fetch_current_weather(location=LOCATION, kid=KID, project_id=PROJECT_ID)
-    weather_data = weather_data.get("now", {})
-
-    precipitation_data = fetch_minutely_precipitation(location=LOCATION, kid=KID, project_id=PROJECT_ID)
-    airquality_data = fetch_air_quality(location=LOCATION, kid=KID, project_id=PROJECT_ID)
-
-    return {
-        "weather": weather_data.get("text", ""),
-        "temperature": weather_data.get("temp", ""),
-        "icon": weather_data.get("icon", ""),
-        "rain_notification": precipitation_data.get("summary", ""),
-        "aqi": airquality_data.get("aqi", ""),
-        "aqi_category": airquality_data.get("category", ""),
-    }
-
-
-def build_event_payload():
-    return {
-        "name": "风力发电场电气设计",
-        "time": "18:00",
-        "date": "2026-05-05",
-        "location": "主楼B412",
-    }
-
-
-@sio.event
+@socket_server.event
 async def connect(sid, environ, auth):
     logger.info("Socket.IO client connected: %s", sid)
 
 
-@sio.event
+@socket_server.event
 async def disconnect(sid):
     logger.info("Socket.IO client disconnected: %s", sid)
 
 
-@sio.event
+@socket_server.event
 async def request_weather(sid, data=None):
-    await sio.emit("weather_data", build_weather_payload(), to=sid)
+    try:
+        await socket_server.emit("weather_data", get_weather_summary(), to=sid)
+    except Exception:
+        logger.exception("Failed to fetch weather data for %s", sid)
+        await socket_server.emit("weather_error", {"error": "Failed to fetch weather data"}, to=sid)
 
 
-@sio.event
+@socket_server.event
 async def request_event(sid, data=None):
-    await sio.emit("event_data", build_event_payload(), to=sid)
+    try:
+        await socket_server.emit("event_data", get_event_summary(), to=sid)
+    except Exception:
+        logger.exception("Failed to fetch event data for %s", sid)
+        await socket_server.emit("event_error", {"error": "Failed to fetch event data"}, to=sid)
 
 
 app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
@@ -249,4 +230,5 @@ app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(socket_app, host="0.0.0.0", port=5000)
+    port = int(os.getenv("PORT", "5000"))
+    uvicorn.run(socket_app, host="0.0.0.0", port=port)

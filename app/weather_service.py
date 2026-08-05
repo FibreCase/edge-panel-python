@@ -21,6 +21,10 @@ DEFAULT_LOCATION = "116.41,39.92"
 PRIVATE_KEY_FILE = Path(__file__).with_name("secrets") / "ed25519-private.pem"
 CACHE_DIR = Path(__file__).with_name(".cache")
 
+LOCATION = os.getenv("QWEATHER_LOCATION", DEFAULT_LOCATION)
+KID = os.getenv("QWEATHER_KID")
+PROJECT_ID = os.getenv("QWEATHER_PROJECT_ID")
+
 WEATHER_CACHE_FILE = CACHE_DIR / "weather.tmp"
 PRECIPITATION_CACHE_FILE = CACHE_DIR / "precipitation.tmp"
 AIRQUALITY_CACHE_FILE = CACHE_DIR / "airquality.tmp"
@@ -235,13 +239,11 @@ def fetch_minutely_precipitation(
 ) -> dict[str, Any]:
     cached = _load_cache(PRECIPITATION_CACHE_FILE)
 
-    if cached and cached.get("summary", "") != NO_RAIN_SUMMARY:
-        max_age = PRECIPITATION_CACHE_TTL
-    else:
-        max_age = PRECIPITATION_NO_RAIN_CACHE_TTL
-
-    if cached and _is_cache_valid(cached, max_age):
-        return cached
+    if cached is not None:
+        has_rain = cached.get("summary", "") != NO_RAIN_SUMMARY
+        max_age = PRECIPITATION_CACHE_TTL if has_rain else PRECIPITATION_NO_RAIN_CACHE_TTL
+        if _is_cache_valid(cached, max_age):
+            return cached
 
     data = _request_minutely_precipitation(
         location=location, token=token,
@@ -293,3 +295,21 @@ def fetch_air_quality(
     data["cached_at"] = time.time()
     _save_cache(AIRQUALITY_CACHE_FILE, data)
     return data
+
+
+def get_weather_summary() -> dict[str, Any]:
+    """Fetch and reshape weather data into the socket payload format."""
+    weather_response = fetch_current_weather(location=LOCATION, kid=KID, project_id=PROJECT_ID)
+    weather_now = weather_response.get("now", {})
+
+    precipitation = fetch_minutely_precipitation(location=LOCATION, kid=KID, project_id=PROJECT_ID)
+    air_quality = fetch_air_quality(location=LOCATION, kid=KID, project_id=PROJECT_ID)
+
+    return {
+        "weather": weather_now.get("text", ""),
+        "temperature": weather_now.get("temp", ""),
+        "icon": weather_now.get("icon", ""),
+        "rain_notification": precipitation.get("summary", ""),
+        "aqi": air_quality.get("aqi", ""),
+        "aqi_category": air_quality.get("category", ""),
+    }
