@@ -19,7 +19,13 @@ uv run python app/main.py
 docker compose up -d
 ```
 
-There are no tests, linter, or formatter configured.
+Tests use the standard-library `unittest` runner:
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
+
+There is no separately configured linter or formatter.
 
 ## Architecture
 
@@ -31,7 +37,9 @@ There are no tests, linter, or formatter configured.
 
 **Event service** (`app/event_service.py`): Placeholder module with `get_event_summary()` returning hardcoded event data. TODO: replace with a real data source.
 
-**Web frontend** (`web/`): Static HTML pages using Tailwind CSS via CDN. `index.html` is the message display/send page; `manage.html` is the message management page. Both are PWA-enabled with a service worker (`sw.js`). Mounted at `/` as a catch-all static route.
+**Web frontend** (`web/`): Static HTML pages using Tailwind CSS via CDN. `index.html` is the message send page and links to management; it does not expose a clear-all action. `manage.html` first presents a four-digit password form and only loads management data after login. Both are PWA-enabled with a service worker (`sw.js`). Mounted at `/` as a catch-all static route.
+
+**Management authentication**: `POST /api/manage/login` compares the submitted four-digit password against `MANAGE_PASSWORD` and returns a random Bearer token. Tokens are held in the process-local `manage_sessions` dictionary for eight hours, so they do not survive a server restart. The management page stores its token in `sessionStorage`. `GET /api/messages/deleted`, `DELETE /api/messages/{message_id}`, `POST /api/messages/deleted/{message_id}/restore`, and `POST /api/messages/clear` use the `require_manage_session` dependency. `GET /api/messages` remains public because message-display clients consume it.
 
 **Image uploads**: Uploaded via `/api/messages/upload-image`. HEIC/HEIF images are converted to JPEG using Pillow. Files are stored in `app/.cache/uploads/` and served at `/uploads/{filename}`. The base URL for image links respects `PUBLIC_BASE_URL` env var, falling back to `LOCAL_BASE_URL`.
 
@@ -39,14 +47,15 @@ There are no tests, linter, or formatter configured.
 
 ## Environment Variables
 
-Docker-compose maps host-side `LOCATION`, `KID`, `PROJECT_ID` to container env vars `QWEATHER_LOCATION`, `QWEATHER_KID`, `QWEATHER_PROJECT_ID`. When running locally (without Docker), set the `QWEATHER_*` variants directly.
+Docker Compose passes through `QWEATHER_LOCATION`, `QWEATHER_KID`, `QWEATHER_PROJECT_ID`, and `MANAGE_PASSWORD` from the host environment. Local runs use the same variable names.
 
 Required for weather: `QWEATHER_KID`, `QWEATHER_PROJECT_ID`, `QWEATHER_LOCATION` (lon,lat format).
 
-Optional: `QWEATHER_PRIVATE_KEY_FILE` (default: `app/secrets/ed25519-private.pem`), `PUBLIC_BASE_URL` (public image URL prefix), `LOCAL_BASE_URL` (default: `http://127.0.0.1:5000`).
+Optional: `QWEATHER_PRIVATE_KEY_FILE` (default: `app/secrets/ed25519-private.pem`), `PUBLIC_BASE_URL` (public image URL prefix), `LOCAL_BASE_URL` (default: `http://127.0.0.1:5000`), and `MANAGE_PASSWORD` (exactly four ASCII digits; default: `1234`). Always override the default management password in deployments.
 
 ## Key Patterns
 
 - All message mutations in `main.py` emit a Socket.IO `messages_updated` event after the database write.
+- Management endpoints that expose history or mutate existing messages must retain the `require_manage_session` dependency. Creating messages and reading the active message feed remain public for panel clients.
 - The weather service uses `_is_cache_valid()` with per-endpoint TTL constants — check these when modifying cache behavior.
 - Python 3.14 is required (see `pyproject.toml` and `.python-version`).

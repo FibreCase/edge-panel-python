@@ -1,4 +1,4 @@
-const CACHE_NAME = "neko-messager-v1";
+const CACHE_NAME = "neko-messager-v2";
 const APP_SHELL = [
   "/",
   "/index.html",

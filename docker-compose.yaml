@@ -9,10 +9,10 @@ services:
       - QWEATHER_LOCATION
       - QWEATHER_KID
       - QWEATHER_PROJECT_ID
+      - MANAGE_PASSWORD
       - TZ=Asia/Shanghai
     volumes:
       - ./secrets:/app/app/secrets
       - ./cache:/app/app/.cache
     ports:
       - "5000:5000"
-

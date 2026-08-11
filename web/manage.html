@@ -343,18 +343,93 @@
             display: inline-block;
             margin-right: 8px;
         }
+
+        .auth-shell {
+            min-height: calc(100vh - 2rem);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .auth-shell.hidden {
+            display: none;
+        }
+
+        .auth-card {
+            width: 100%;
+            max-width: 28rem;
+            text-align: center;
+        }
+
+        .auth-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 20px;
+            background-color: var(--md-sys-color-secondary-container);
+            color: var(--md-sys-color-on-secondary-container);
+        }
+
+        .password-field {
+            width: 100%;
+            margin-top: 24px;
+            padding: 16px;
+            border: 1px solid var(--md-sys-color-outline);
+            border-radius: 12px;
+            outline: none;
+            text-align: center;
+            font-size: 24px;
+            letter-spacing: 12px;
+            color: var(--md-sys-color-on-surface);
+            background-color: var(--md-sys-color-surface-variant);
+        }
+
+        .password-field:focus {
+            border: 2px solid var(--md-sys-color-primary);
+            padding: 15px;
+        }
+
+        .auth-error {
+            min-height: 20px;
+            margin: 12px 0;
+            color: var(--md-sys-color-error);
+            font-size: 14px;
+        }
     </style>
 </head>
 <body class="p-4">
 
+    <div id="auth-view" class="auth-shell">
+        <div class="m3-card auth-card">
+            <div class="auth-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-medium tracking-tight">进入消息管理</h1>
+            <p class="mt-2 text-sm" style="color:var(--md-sys-color-on-surface-variant)">请输入四位管理密码</p>
+            <form id="login-form">
+                <input id="password-input" class="password-field" type="password" inputmode="numeric"
+                    pattern="[0-9]{4}" maxlength="4" autocomplete="current-password" aria-label="四位管理密码" required autofocus>
+                <div id="auth-error" class="auth-error" role="alert"></div>
+                <button id="login-btn" class="w-full m3-button-filled py-4" type="submit">验证并进入</button>
+            </form>
+            <a href="index.html" class="m3-button-outlined inline-block mt-4 px-5 py-2">返回发送</a>
+        </div>
+    </div>
+
+    <main id="manage-view" class="hidden">
+
     <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-medium tracking-tight">消息管理</h1>
-        <a href="index.html" class="m3-button-outlined px-4 py-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;margin-right:4px;">
-                <path d="M11 19H5V5h14v7"></path><polyline points="17 13 23 7 23 13"></polyline><line x1="23" y1="7" x2="17" y2="13"></line>
-            </svg>
-            返回发送
-        </a>
+        <div class="flex gap-2">
+            <button type="button" class="m3-button-outlined px-4 py-2" onclick="logout()">退出</button>
+            <a href="index.html" class="m3-button-outlined px-4 py-2">返回发送</a>
+        </div>
     </div>
 
     <div id="status-container"></div>
@@ -408,26 +483,115 @@
             </div>
         </div>
     </div>
+    </main>
 
     <script>
         const API_BASE_URL = window.location.origin;
         const MESSAGE_API_URL = `${API_BASE_URL}/api/messages`;
         const DELETED_MESSAGE_API_URL = `${API_BASE_URL}/api/messages/deleted`;
+        const MANAGE_LOGIN_API_URL = `${API_BASE_URL}/api/manage/login`;
         const SOCKET_URL = window.location.origin;
+        const TOKEN_STORAGE_KEY = 'neko_manage_token';
         
         let messages = [];
         let deletedMessages = [];
         let selectedIds = new Set();
         let isConnected = false;
+        let manageToken = sessionStorage.getItem(TOKEN_STORAGE_KEY);
+        let socketStarted = false;
+        let manageSocket = null;
 
-        // Initialize Socket.IO client
-        const script = document.createElement('script');
-        script.src = 'https://cdn.socket.io/4.5.4/socket.io.min.js';
-        script.onload = initSocket;
-        document.head.appendChild(script);
+        function showLogin(message = '') {
+            document.getElementById('manage-view').classList.add('hidden');
+            document.getElementById('auth-view').classList.remove('hidden');
+            document.getElementById('auth-error').textContent = message;
+            document.getElementById('password-input').value = '';
+            document.getElementById('password-input').focus();
+        }
+
+        function showManage() {
+            document.getElementById('auth-view').classList.add('hidden');
+            document.getElementById('manage-view').classList.remove('hidden');
+        }
+
+        function logout() {
+            manageToken = null;
+            sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+            if (manageSocket) {
+                manageSocket.disconnect();
+                manageSocket = null;
+            }
+            socketStarted = false;
+            showLogin();
+        }
+
+        async function adminFetch(url, options = {}) {
+            const headers = new Headers(options.headers || {});
+            headers.set('Authorization', `Bearer ${manageToken}`);
+            const response = await fetch(url, { ...options, headers });
+            if (response.status === 401) {
+                logout();
+                throw new Error('管理会话已失效，请重新输入密码');
+            }
+            return response;
+        }
+
+        document.getElementById('password-input').addEventListener('input', (event) => {
+            event.target.value = event.target.value.replace(/\D/g, '').slice(0, 4);
+            document.getElementById('auth-error').textContent = '';
+        });
+
+        document.getElementById('login-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const password = document.getElementById('password-input').value;
+            const loginBtn = document.getElementById('login-btn');
+            if (!/^\d{4}$/.test(password)) {
+                document.getElementById('auth-error').textContent = '请输入四位数字密码';
+                return;
+            }
+
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<span class="m3-progress-circular"></span>';
+            try {
+                const response = await fetch(MANAGE_LOGIN_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                if (!response.ok) {
+                    document.getElementById('auth-error').textContent = response.status === 401 ? '密码错误，请重试' : '验证失败，请稍后重试';
+                    return;
+                }
+                const data = await response.json();
+                manageToken = data.token;
+                sessionStorage.setItem(TOKEN_STORAGE_KEY, manageToken);
+                startManagePage();
+            } catch (error) {
+                document.getElementById('auth-error').textContent = '无法连接服务器，请稍后重试';
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = '验证并进入';
+            }
+        });
+
+        function startManagePage() {
+            showManage();
+            loadAllMessages();
+            if (socketStarted) return;
+            socketStarted = true;
+            if (typeof io !== 'undefined') {
+                initSocket();
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = 'https://cdn.socket.io/4.5.4/socket.io.min.js';
+            script.onload = initSocket;
+            document.head.appendChild(script);
+        }
 
         function initSocket() {
             const socket = io(SOCKET_URL, { reconnection: true });
+            manageSocket = socket;
 
             socket.on('connect', () => {
                 console.log('Socket.IO connected');
@@ -442,7 +606,7 @@
 
             socket.on('messages_updated', (data) => {
                 console.log('Messages updated:', data);
-                loadAllMessages();
+                if (manageToken) loadAllMessages();
             });
 
             socket.on('connect_error', (error) => {
@@ -470,7 +634,7 @@
 
         async function loadDeletedMessages() {
             try {
-                const response = await fetch(DELETED_MESSAGE_API_URL);
+                const response = await adminFetch(DELETED_MESSAGE_API_URL);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);
                 }
@@ -659,7 +823,7 @@
             if (!confirm('确认删除此消息？')) return;
 
             try {
-                const response = await fetch(`${MESSAGE_API_URL}/${messageId}`, {
+                const response = await adminFetch(`${MESSAGE_API_URL}/${messageId}`, {
                     method: 'DELETE'
                 });
 
@@ -690,7 +854,7 @@
 
             for (const messageId of selectedIds) {
                 try {
-                    const response = await fetch(`${MESSAGE_API_URL}/${messageId}`, {
+                    const response = await adminFetch(`${MESSAGE_API_URL}/${messageId}`, {
                         method: 'DELETE'
                     });
 
@@ -720,7 +884,7 @@
             if (!confirm('确认恢复此历史消息？')) return;
 
             try {
-                const response = await fetch(`${DELETED_MESSAGE_API_URL}/${messageId}/restore`, {
+                const response = await adminFetch(`${DELETED_MESSAGE_API_URL}/${messageId}/restore`, {
                     method: 'POST'
                 });
 
@@ -802,8 +966,11 @@
             });
         }
 
-        // Load messages on page load
-        loadAllMessages();
+        if (manageToken) {
+            startManagePage();
+        } else {
+            showLogin();
+        }
     </script>
 </body>
 </html>

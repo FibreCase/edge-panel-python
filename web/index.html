@@ -282,14 +282,12 @@
             border-top-color: var(--md-sys-color-surface-variant);
         }
 
-        #clear-btn,
         #manage-btn {
             border-color: var(--md-sys-color-outline);
             color: var(--md-sys-color-on-surface-variant);
             background-color: transparent;
         }
 
-        #clear-btn:hover,
         #manage-btn:hover {
             background-color: rgba(0, 90, 193, 0.12);
         }
@@ -370,16 +368,8 @@
         </div>
 
         <div id="bottom-actions" class="mt-8 pt-6 border-t border-gray-200 flex gap-3">
-            <button id="clear-btn" onclick="handleClear()" title="清空消息" 
-                class="flex-1 px-4 py-2 text-sm font-medium rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
-                style="background:transparent">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;margin-right:4px;">
-                    <polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-                清空消息
-            </button>
             <button id="manage-btn" onclick="window.location.href='manage.html'" title="管理消息" 
-                class="flex-1 px-4 py-2 text-sm font-medium rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+                class="w-full px-4 py-2 text-sm font-medium rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
                 style="background:transparent">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;margin-right:4px;">
                     <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"></path><path d="M5 8h14"></path><path d="M5 13h14"></path><path d="M5 18h10"></path>
@@ -393,7 +383,6 @@
         const API_BASE_URL = window.location.origin;
         const MESSAGE_API_URL = `${API_BASE_URL}/api/messages`;
         const IMAGE_UPLOAD_API_URL = `${API_BASE_URL}/api/messages/upload-image`;
-        const CLEAR_API_URL = `${API_BASE_URL}/api/messages/clear`;
         const TIMEOUT_MS = 60000;
         let currentMode = 'text';
         let deferredInstallPrompt = null;
@@ -635,21 +624,6 @@
             statusMsg.classList.remove('hidden');
             statusMsg.style.backgroundColor = isSuccess ? 'var(--status-success-bg)' : 'var(--status-error-bg)';
             statusMsg.style.color = isSuccess ? 'var(--status-success-text)' : 'var(--status-error-text)';
-        }
-
-        async function handleClear() {
-            if (!confirm('确认要清空当前消息？删除内容会保留在历史记录中，最近 20 条可恢复。')) return;
-            try {
-                const resp = await fetch(CLEAR_API_URL, { method: 'POST' });
-                if (!resp.ok) {
-                    showStatus('清空失败', false);
-                    return;
-                }
-                const body = await resp.json();
-                showStatus(`已清空 ${body.deleted_count} 条消息，历史记录已保留`, true);
-            } catch (e) {
-                showStatus('请求失败', false);
-            }
         }
 
         setupPwa();

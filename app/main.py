@@ -1,16 +1,19 @@
 
 from contextlib import asynccontextmanager
 from io import BytesIO
+import hmac
 import logging
 import os
+import secrets
 import sys
+import time
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -38,6 +41,11 @@ WEB_DIR = APP_DIR.parent / "web"
 UPLOADS_DIR = APP_DIR / ".cache" / "uploads"
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 LOCAL_BASE_URL = os.getenv("LOCAL_BASE_URL", "http://127.0.0.1:5000").rstrip("/")
+MANAGE_PASSWORD = os.getenv("MANAGE_PASSWORD", "1234")
+MANAGE_SESSION_TTL_SECONDS = 8 * 60 * 60
+manage_sessions: dict[str, float] = {}
+if len(MANAGE_PASSWORD) != 4 or not MANAGE_PASSWORD.isascii() or not MANAGE_PASSWORD.isdigit():
+    raise RuntimeError("MANAGE_PASSWORD must contain exactly four ASCII digits")
 HEIC_CONTENT_TYPES = {
     "image/heic",
     "image/heif",
@@ -63,7 +71,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR), check_dir=False), name="uploads")
 socket_app = socketio.ASGIApp(socket_server, other_asgi_app=app)
 
 
@@ -77,6 +85,36 @@ class MessageCreateRequest(BaseModel):
 class MessageNotifyWebhookRequest(BaseModel):
     app_name: str = Field(min_length=1)
     body: str = Field(min_length=1)
+
+
+class ManageLoginRequest(BaseModel):
+    password: str = Field(pattern=r"^[0-9]{4}$")
+
+
+def require_manage_session(authorization: str | None = Header(default=None)) -> None:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Manage authentication required")
+
+    token = authorization.removeprefix("Bearer ")
+    expires_at = manage_sessions.get(token)
+    if expires_at is None or expires_at <= time.time():
+        manage_sessions.pop(token, None)
+        raise HTTPException(status_code=401, detail="Manage session expired")
+
+
+@app.post("/api/manage/login")
+def manage_login(request: ManageLoginRequest):
+    if not hmac.compare_digest(request.password, MANAGE_PASSWORD):
+        raise HTTPException(status_code=401, detail="密码错误")
+
+    now = time.time()
+    for token, expires_at in list(manage_sessions.items()):
+        if expires_at <= now:
+            manage_sessions.pop(token, None)
+
+    token = secrets.token_urlsafe(32)
+    manage_sessions[token] = now + MANAGE_SESSION_TTL_SECONDS
+    return {"token": token, "expires_in": MANAGE_SESSION_TTL_SECONDS}
 
 
 def _normalize_uploaded_image(
@@ -131,7 +169,7 @@ def get_messages():
     return {"messages": list_messages()}
 
 
-@app.get("/api/messages/deleted")
+@app.get("/api/messages/deleted", dependencies=[Depends(require_manage_session)])
 def get_deleted_messages():
     return {"messages": list_deleted_messages()}
 
@@ -169,7 +207,7 @@ async def webhook_notify_message(request: MessageNotifyWebhookRequest):
     return {"message": saved}
 
 
-@app.delete("/api/messages/{message_id}")
+@app.delete("/api/messages/{message_id}", dependencies=[Depends(require_manage_session)])
 async def delete_single_message(message_id: int):
     message = delete_message(message_id)
     if not message:
@@ -179,7 +217,7 @@ async def delete_single_message(message_id: int):
     return {"message": message}
 
 
-@app.post("/api/messages/deleted/{message_id}/restore")
+@app.post("/api/messages/deleted/{message_id}/restore", dependencies=[Depends(require_manage_session)])
 async def restore_single_message(message_id: int):
     message = restore_deleted_message(message_id)
     if not message:
@@ -189,7 +227,7 @@ async def restore_single_message(message_id: int):
     return {"message": message}
 
 
-@app.post("/api/messages/clear")
+@app.post("/api/messages/clear", dependencies=[Depends(require_manage_session)])
 async def clear_messages():
     removed = delete_all_messages()
     await socket_server.emit("messages_updated", {"cleared": True})
