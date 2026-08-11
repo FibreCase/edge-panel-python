@@ -12,7 +12,7 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - ./secrets:/app/app/secrets
-      - ./cache:/app/app/cache
+      - ./cache:/app/app/.cache
     ports:
       - "5000:5000"
 

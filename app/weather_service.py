@@ -123,7 +123,12 @@ def _make_api_request(url: str, token: str) -> dict[str, Any]:
     except URLError as exc:
         raise RuntimeError(f"QWeather request failed: {exc.reason}") from exc
 
-    if payload.get("code") != "200":
+    # Web API v7 reports application status in ``code`` while the newer
+    # Air Quality API v1 uses the HTTP status and omits ``code`` on success.
+    # urlopen raises HTTPError for non-2xx responses, so only validate the
+    # legacy application code when the response actually contains one.
+    code = payload.get("code")
+    if code is not None and str(code) != "200":
         raise RuntimeError(f"QWeather API error: {payload}")
 
     return payload
