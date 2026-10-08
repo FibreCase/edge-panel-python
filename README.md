@@ -16,6 +16,7 @@
 - `app/main.py`：FastAPI 入口，定义 HTTP 接口、Socket.IO 事件和静态资源挂载。
 - `app/message_service.py`：SQLite 消息存储与读写逻辑。
 - `app/weather_service.py`：QWeather 请求与缓存逻辑。
+- `app/sensor_service.py`：从本地 AHT21/ENS160 HTTP 服务获取传感器数据。
 - `app/event_service.py`：事件服务，目前返回占位数据，后续可接入独立事件源。
 - `web/index.html`：消息展示与发送页面。
 - `web/manage.html`：带密码登录界面的消息管理页面。
@@ -48,6 +49,18 @@ docker compose up -d
 | `QWEATHER_KID` | QWeather key id | 是（天气功能） | — |
 | `QWEATHER_PROJECT_ID` | QWeather project id | 是（天气功能） | — |
 | `QWEATHER_PRIVATE_KEY_FILE` | QWeather Ed25519 私钥文件路径 | 否 | `app/secrets/ed25519-private.pem` |
+
+### 本地传感器
+
+`LOCAL_TEMP_SERVER` 指定传感器服务器地址，默认 `http://localhost:38285`。
+`app.sensor_service.fetch_sensor_data()` 请求 `/api/v1/sensor`，返回完整快照：
+`status`、`last_updated_unix_ms`、`reading` 和 `error`。其中 `reading` 包含
+`temperature_c`（摄氏度）、`humidity_rh_pct`（相对湿度百分比）、`aqi`（ENS160 的 1–5 级指标）、
+`tvoc_ppb`、`eco2_ppm`、`validity` 和 `new_data`。
+
+每次调用获取最新快照，请求超时为 5 秒；连接失败、HTTP 错误、异常状态或无读数时抛出
+`RuntimeError`。ENS160 的预热/启动状态通过 `validity` 原样保留，使用空气质量读数前应检查
+其是否为 `normal`。前端通过 `request_sensor` 获取快照，每 10 秒刷新天气卡片中的室内温度、湿度和 eCO₂。
 
 ### 管理鉴权、图片与服务地址
 
@@ -101,6 +114,7 @@ curl 'http://127.0.0.1:5000/api/messages/deleted' \
 
 - `request_weather` -> 返回 `weather_data`
 - `request_event` -> 返回 `event_data`
+- `request_sensor` -> 返回 `sensor_data`；获取失败时返回 `status: error` 和 `reading: null`
 - `messages_updated` -> 消息变更通知
 
 ## 数据存储

@@ -1,5 +1,6 @@
 
 from contextlib import asynccontextmanager
+import asyncio
 from io import BytesIO
 import hmac
 import logging
@@ -23,6 +24,7 @@ import socketio
 
 from weather_service import get_weather_summary, KID, PROJECT_ID
 from event_service import get_event_summary
+from sensor_service import fetch_sensor_data
 from message_service import (
     delete_all_messages,
     delete_message,
@@ -251,6 +253,16 @@ async def request_weather(sid, data=None):
     except Exception:
         logger.exception("Failed to fetch weather data for %s", sid)
         await socket_server.emit("weather_error", {"error": "Failed to fetch weather data"}, to=sid)
+
+
+@socket_server.event
+async def request_sensor(sid, data=None):
+    try:
+        payload = await asyncio.to_thread(fetch_sensor_data)
+    except Exception:
+        logger.exception("Failed to fetch sensor data for %s", sid)
+        payload = {"status": "error", "reading": None}
+    await socket_server.emit("sensor_data", payload, to=sid)
 
 
 @socket_server.event

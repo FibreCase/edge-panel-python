@@ -11,6 +11,28 @@ from pydantic import ValidationError
 from app import main
 
 
+class SensorSocketTests(unittest.IsolatedAsyncioTestCase):
+    async def test_sensor_snapshot_is_sent_only_to_requesting_client(self):
+        payload = {"status": "ok", "reading": {"temperature_c": 26.1}}
+        with (
+            patch.object(main, "fetch_sensor_data", return_value=payload),
+            patch.object(main.socket_server, "emit", new=AsyncMock()) as emit,
+        ):
+            await main.request_sensor("client-1")
+        emit.assert_awaited_once_with("sensor_data", payload, to="client-1")
+
+    async def test_sensor_failure_returns_unavailable_snapshot(self):
+        with (
+            patch.object(main, "fetch_sensor_data", side_effect=RuntimeError("offline")),
+            patch.object(main.logger, "exception"),
+            patch.object(main.socket_server, "emit", new=AsyncMock()) as emit,
+        ):
+            await main.request_sensor("client-1")
+        emit.assert_awaited_once_with(
+            "sensor_data", {"status": "error", "reading": None}, to="client-1"
+        )
+
+
 class ManagementAuthenticationTests(unittest.TestCase):
     def setUp(self) -> None:
         main.manage_sessions.clear()
