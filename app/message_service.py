@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import shutil
 import sqlite3
 from pathlib import Path
@@ -93,7 +94,7 @@ def _get_connection() -> sqlite3.Connection:
 
 
 def init_message_db() -> None:
-    with _get_connection() as conn:
+    with closing(_get_connection()) as conn:
         _ensure_messages_schema(conn)
         _ensure_deleted_messages_schema(conn)
         conn.commit()
@@ -209,7 +210,7 @@ def insert_message(
     sub_content: str | None = None,
     source_name: str | None = None,
 ) -> dict[str, Any]:
-    with _get_connection() as conn:
+    with closing(_get_connection()) as conn:
         cursor = conn.execute(
             """
             INSERT INTO messages (type, content, sub_content, source_name)
@@ -231,7 +232,7 @@ def insert_message(
 
 
 def list_messages() -> list[dict[str, Any]]:
-    with _get_connection() as conn:
+    with closing(_get_connection()) as conn:
         rows = conn.execute(
             """
             SELECT id, type, content, sub_content, source_name, created_at
@@ -244,7 +245,7 @@ def list_messages() -> list[dict[str, Any]]:
 
 
 def list_deleted_messages() -> list[dict[str, Any]]:
-    with _get_connection() as conn:
+    with closing(_get_connection()) as conn:
         rows = conn.execute(
             """
             SELECT original_id, type, content, sub_content, source_name, created_at, deleted_at
@@ -257,7 +258,7 @@ def list_deleted_messages() -> list[dict[str, Any]]:
 
 
 def restore_deleted_message(message_id: int) -> dict[str, Any] | None:
-    with _get_connection() as conn:
+    with closing(_get_connection()) as conn:
         row = conn.execute(
             """
             SELECT original_id, type, content, sub_content, source_name, created_at, deleted_at
@@ -293,7 +294,7 @@ def restore_deleted_message(message_id: int) -> dict[str, Any] | None:
 
 
 def delete_all_messages() -> list[dict[str, Any]]:
-    with _get_connection() as conn:
+    with closing(_get_connection()) as conn:
         rows = conn.execute(
             """
             SELECT id, type, content, sub_content, source_name, created_at
@@ -314,7 +315,7 @@ def delete_all_messages() -> list[dict[str, Any]]:
 
 
 def delete_message(message_id: int) -> dict[str, Any] | None:
-    with _get_connection() as conn:
+    with closing(_get_connection()) as conn:
         row = conn.execute(
             """
             SELECT id, type, content, sub_content, source_name, created_at
