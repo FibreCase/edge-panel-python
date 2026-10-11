@@ -17,7 +17,7 @@
 - `app/message_service.py`：SQLite 消息存储与读写逻辑。
 - `app/weather_service.py`：QWeather 请求与缓存逻辑。
 - `app/sensor_service.py`：从本地 AHT21/ENS160 HTTP 服务获取传感器数据。
-- `app/event_service.py`：事件服务，目前返回占位数据，后续可接入独立事件源。
+- `app/event_service.py`：从指定 ICS 文件读取当前或下一条日程。
 - `web/index.html`：消息展示与发送页面。
 - `web/manage.html`：带密码登录界面的消息管理页面。
 - `web/sw.js`：静态资源缓存的 Service Worker。
@@ -49,6 +49,17 @@ docker compose up -d
 | `QWEATHER_KID` | QWeather key id | 是（天气功能） | — |
 | `QWEATHER_PROJECT_ID` | QWeather project id | 是（天气功能） | — |
 | `QWEATHER_PRIVATE_KEY_FILE` | QWeather Ed25519 私钥文件路径 | 否 | `app/secrets/ed25519-private.pem` |
+
+### 日历事件
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `EVENT_ICS_FILE` | 本地 ICS 文件路径；相对路径基于服务工作目录 | `app/events.ics`（基于服务代码目录） |
+| `EVENT_TIMEZONE` | 显示时区，也用于未指定时区的时间 | `Asia/Shanghai` |
+
+例如：`EVENT_ICS_FILE=/path/to/calendar.ics uv run python app/main.py`。
+每次 `request_event` 都会重新读取文件，无需重启即可更新日程。文件不存在或没有符合条件的事件时返回“暂无日程”；文件格式错误通过 `event_error` 报告。
+Docker 可将文件放在已有的 `./cache/` 挂载目录，然后配置 `EVENT_ICS_FILE=/app/app/.cache/calendar.ics`。自定义路径需要挂载到容器内。
 
 ### 本地传感器
 
@@ -127,7 +138,7 @@ curl 'http://127.0.0.1:5000/api/messages/deleted' \
 
 - 图片上传支持常见图片格式，也会将 HEIC / HEIF 转换为 JPEG 后保存。
 - 天气数据通过 QWeather API 拉取，并在本地缓存以减少重复请求。
-- 事件数据当前由 `app/event_service.py` 提供固定占位 payload，后续可接入独立事件源。
+- 事件数据由 `app/event_service.py` 从 ICS 文件读取，返回正在进行或未来 366 天内最近开始的事件；支持重复规则、排除日期、单次修改及取消状态；跳过全天事件，仅展示带具体时间的日程。
 - `web/` 下的静态页面由后端直接挂载，上传后的图片也通过 `/uploads/` 对外访问。
 - 主页面不再提供清空消息按钮；进入管理页后必须先输入四位密码，删除、恢复及历史记录操作也会在后端验证管理令牌。
 

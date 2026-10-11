@@ -1,4 +1,3 @@
-
 name: flutter-desktop-panel
 
 services:
@@ -6,13 +5,21 @@ services:
     image: flutter-desk-panel-backend
     restart: unless-stopped
     environment:
-      - QWEATHER_LOCATION
-      - QWEATHER_KID
-      - QWEATHER_PROJECT_ID
-      - MANAGE_PASSWORD
-      - TZ=Asia/Shanghai
+      QWEATHER_LOCATION: ${QWEATHER_LOCATION:-116.41,39.92}
+      QWEATHER_KID: ${QWEATHER_KID:-}
+      QWEATHER_PROJECT_ID: ${QWEATHER_PROJECT_ID:-}
+      QWEATHER_PRIVATE_KEY_FILE: ${QWEATHER_PRIVATE_KEY_FILE:-app/secrets/ed25519-private.pem}
+      MANAGE_PASSWORD: "${MANAGE_PASSWORD:-1234}"
+      LOCAL_TEMP_SERVER: ${LOCAL_TEMP_SERVER:-http://localhost:38285}
+      EVENT_ICS_FILE: ${EVENT_ICS_FILE:-app/.cache/events.ics}
+      EVENT_TIMEZONE: ${EVENT_TIMEZONE:-Asia/Shanghai}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      LOCAL_BASE_URL: ${LOCAL_BASE_URL:-http://127.0.0.1:${PORT:-5000}}
+      PORT: "${PORT:-5000}"
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - ./secrets:/app/app/secrets
+      - ./secrets:/app/app/secrets:ro
+      # Place events.ics here; EVENT_ICS_FILE must refer to its container path.
       - ./cache:/app/app/.cache
     ports:
-      - "5000:5000"
+      - "${PORT:-5000}:${PORT:-5000}"
